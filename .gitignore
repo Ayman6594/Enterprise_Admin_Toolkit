@@ -1,0 +1,11 @@
+# Logs contain operational data (usernames, timestamps, targeted hosts) - never commit
+Logs/*.log
+
+# Local overrides / secrets - if you add credential handling later, this is where it lands
+Config/*.local.psd1
+Config/secrets.psd1
+
+# Windows / editor noise
+*.suo
+.vscode/
+Thumbs.db
