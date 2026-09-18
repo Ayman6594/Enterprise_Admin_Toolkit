@@ -69,3 +69,5 @@ function Test-IsAdmin {
     $principal = New-Object Security.Principal.WindowsPrincipal($identity)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
+
+Export-ModuleMember -Function Write-ToolkitLog, Test-IsAdmin
