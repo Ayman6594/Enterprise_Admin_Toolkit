@@ -28,7 +28,7 @@ cd Enterprise_Admin_Toolkit
 .\Core\Start-Toolkit.ps1
 ```
 
-## v1.0 — Network Troubleshooting Toolkit
+## v1.0 : Network Troubleshooting Toolkit
 
 - Display Full IP Configuration
 - Test Internet Connectivity
@@ -51,7 +51,7 @@ cd Enterprise_Admin_Toolkit
 - Every action is logged to `Logs\toolkit.log` via a centralized logging function (`Write-ToolkitLog`) — full audit trail of who ran what, when.
 - Destructive/system-changing actions (`Reset-WinsockCatalog`, `Reset-TCPIPStack`, `Reset-IPAddress`) implement `SupportsShouldProcess` (`-WhatIf` / `-Confirm`) and check for administrator privileges before running.
 
-## v2.0 — System Administration Toolkit
+## v2.0 : System Administration Toolkit
 
 **Active Directory** *(requires RSAT-AD-PowerShell + domain-joined machine)*
 - Create User · Disable User · Enable User · Unlock User · Reset Password
@@ -73,13 +73,13 @@ cd Enterprise_Admin_Toolkit
 
 ## Roadmap
 
-### v3.0 — Security Operations Toolkit
+### v3.0 : Security Operations Toolkit
 Windows Event Log monitoring (failed/successful/privileged logons, account creation/deletion, group membership changes), security auditing (domain admins, lockouts, password policy, local admins), and incident response tooling (log search, user activity investigation, security timeline generation).
 
-### v4.0 — Monitoring & Reporting Platform
+### v4.0 : Monitoring & Reporting Platform
 Centralized health monitoring (CPU, memory, disk, uptime, services) for Windows and Linux servers, process/critical service monitoring, and automated daily/security/audit reports with HTML dashboard generation.
 
-### v5.0 — Enterprise Operations Console
+### v5.0 : Enterprise Operations Console
 WPF GUI with dashboard, AD management, security dashboard, monitoring dashboard, dark theme, multi-module architecture, role-based access, configuration profiles, and report export.
 
 ### Future Ideas
