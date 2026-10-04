@@ -1,38 +1,21 @@
 <#
 .SYNOPSIS
-    Enterprise Admin Toolkit - Main Entry Point (v2.0)
-
-.DESCRIPTION
-    Console menu that dot-sources Core\*.ps1 and imports available modules.
-    This file is intentionally "dumb" - it just presents menus and calls
-    functions from the modules. All real logic lives in Modules\*.psm1, so
-    when v5.0 adds a WPF GUI, that GUI can call the exact same functions
-    without any logic duplication.
-
-    v2.0 restructures the single flat menu into a category menu (Network /
-    Active Directory / System Administration), since a flat list stops
-    scaling past one module.
-
-.NOTES
-    Run as Administrator to use actions that modify network configuration.
-    ActiveDirectory menu requires RSAT-AD-PowerShell and a domain-joined
-    machine - the toolkit detects this and disables that menu if unavailable.
+    Enterprise Admin Toolkit - Main Entry Point (v4.0)
 #>
 
-# --- Bootstrap: resolve paths relative to this script, not the caller's CWD ---
 $RootPath = Split-Path -Path $PSScriptRoot -Parent
 
-# Logging and Prerequisites must be Import-Module'd, not dot-sourced. Dot-sourcing
-# only makes functions visible in THIS script's own scope - it does not share them
-# with other modules (NetworkTools.psm1, ADTools.psm1, SystemTools.psm1) which run
-# in their own isolated module scope. Import-Module registers functions globally
-# in the session, so every other module can call Write-ToolkitLog / Test-IsAdmin /
-# Test-ADModuleAvailable regardless of which file defines them.
 Import-Module (Join-Path $PSScriptRoot "Logging.psm1") -Force
 Import-Module (Join-Path $PSScriptRoot "Prerequisites.psm1") -Force
 
 Import-Module (Join-Path $RootPath "Modules\Network\NetworkTools.psm1") -Force
 Import-Module (Join-Path $RootPath "Modules\System\SystemTools.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Security\EventLogMonitoring.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Security\SecurityAuditing.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Security\IncidentResponse.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Monitoring\HealthMonitoring.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Monitoring\InfrastructureMonitoring.psm1") -Force
+Import-Module (Join-Path $RootPath "Modules\Reports\ReportGeneration.psm1") -Force
 
 $Script:ADAvailable = Test-ADModuleAvailable
 if ($Script:ADAvailable) {
@@ -40,22 +23,26 @@ if ($Script:ADAvailable) {
     Import-Module (Join-Path $RootPath "Modules\ActiveDirectory\ADTools.psm1") -Force
 }
 
-# ============================================================
-#  MAIN MENU
-# ============================================================
 function Show-MainMenu {
     Clear-Host
     Write-Host "==================================================" -ForegroundColor Cyan
-    Write-Host "        ENTERPRISE ADMIN TOOLKIT - v2.0" -ForegroundColor Cyan
+    Write-Host "        ENTERPRISE ADMIN TOOLKIT - v4.0" -ForegroundColor Cyan
     Write-Host "==================================================" -ForegroundColor Cyan
     $adminStatus = if (Test-IsAdmin) { "Yes" } else { "No (some actions disabled)" }
     Write-Host " Running as Administrator : $adminStatus"
     $adStatus = if ($Script:ADAvailable) { "Available" } else { "Not available (RSAT missing)" }
-    Write-Host " Active Directory module  : $adStatus`n"
+    Write-Host " Active Directory module  : $adStatus"
+    if (-not (Test-IsAdmin)) {
+        Write-Host " Note: Security log requires elevation - relaunch as Administrator for Security Operations`n" -ForegroundColor DarkYellow
+    } else {
+        Write-Host ""
+    }
 
     Write-Host " 1. Network Troubleshooting"
     Write-Host " 2. Active Directory$(if (-not $Script:ADAvailable) { '  [Unavailable]' })"
     Write-Host " 3. System Administration"
+    Write-Host " 4. Security Operations$(if (-not (Test-IsAdmin)) { '  [Needs Admin]' })"
+    Write-Host " 5. Monitoring & Reporting"
     Write-Host " 0. Exit"
     Write-Host "==================================================" -ForegroundColor Cyan
 }
@@ -254,6 +241,219 @@ function Start-SystemLoop {
 }
 
 # ============================================================
+#  SECURITY OPERATIONS SUBMENU (v3.0)
+# ============================================================
+function Show-SecurityMenu {
+    Clear-Host
+    Write-Host "---------------- SECURITY OPERATIONS ----------------" -ForegroundColor Cyan
+    Write-Host " -- Event Log Monitoring --"
+    Write-Host " 1.  Failed Logons (4625)"
+    Write-Host " 2.  Successful Logons (4624)"
+    Write-Host " 3.  Privileged Logons (4672)"
+    Write-Host " 4.  User Creation Events (4720)"
+    Write-Host " 5.  User Deletion Events (4726)"
+    Write-Host " 6.  Group Membership Changes (4728/4729/4732/4733)"
+    Write-Host " -- Security Auditing --"
+    Write-Host " 7.  Domain Admin Audit                  [AD]"
+    Write-Host " 8.  Account Lockout Audit                [AD]"
+    Write-Host " 9.  Disabled Accounts Report             [AD]"
+    Write-Host " 10. Password Policy Review               [AD]"
+    Write-Host " 11. Local Administrators Audit"
+    Write-Host " -- Incident Response --"
+    Write-Host " 12. Search Event Logs"
+    Write-Host " 13. Investigate User Activity"
+    Write-Host " 14. Generate Security Timeline"
+    Write-Host " 0.  Back to Main Menu"
+    Write-Host "-------------------------------------------------------" -ForegroundColor Cyan
+}
+
+function Start-SecurityLoop {
+    do {
+        Show-SecurityMenu
+        $choice = Read-Host "`nSelect an option"
+
+        switch ($choice) {
+            "1" {
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-FailedLogonEvents -Hours $hours | Format-Table -AutoSize -Property TimeCreated, TargetUserName, WorkstationName, IpAddress, FailureReason
+            }
+            "2" {
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-SuccessfulLogonEvents -Hours $hours | Format-Table -AutoSize -Property TimeCreated, TargetUserName, WorkstationName, IpAddress
+            }
+            "3" {
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-PrivilegedLogonEvents -Hours $hours | Format-Table -AutoSize -Property TimeCreated, SubjectUserName, PrivilegeList
+            }
+            "4" {
+                if (-not $Script:ADAvailable) { Write-Warning "Requires AD module / run against a Domain Controller for meaningful results." }
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-UserCreationEvents -Hours $hours | Format-Table -AutoSize
+            }
+            "5" {
+                if (-not $Script:ADAvailable) { Write-Warning "Requires AD module / run against a Domain Controller for meaningful results." }
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-UserDeletionEvents -Hours $hours | Format-Table -AutoSize
+            }
+            "6" {
+                if (-not $Script:ADAvailable) { Write-Warning "Requires AD module / run against a Domain Controller for meaningful results." }
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-GroupMembershipChangeEvents -Hours $hours | Format-Table -AutoSize
+            }
+            "7" {
+                if ($Script:ADAvailable) { Get-DomainAdminAudit | Format-Table -AutoSize } else { Write-Warning "Requires ActiveDirectory module (RSAT)." }
+            }
+            "8" {
+                if ($Script:ADAvailable) { Get-AccountLockoutAudit | Format-Table -AutoSize } else { Write-Warning "Requires ActiveDirectory module (RSAT)." }
+            }
+            "9" {
+                if ($Script:ADAvailable) { Get-DisabledAccountsReport | Format-Table -AutoSize } else { Write-Warning "Requires ActiveDirectory module (RSAT)." }
+            }
+            "10" {
+                if ($Script:ADAvailable) { Get-PasswordPolicyReview | Format-List } else { Write-Warning "Requires ActiveDirectory module (RSAT)." }
+            }
+            "11" { Get-LocalAdministratorsAudit | Format-Table -AutoSize }
+            "12" {
+                $kw = Read-Host "Keyword to search for (Enter to skip)"
+                $h  = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                if ([string]::IsNullOrWhiteSpace($kw)) {
+                    Search-SecurityEventLogs -Hours $hours | Format-Table -AutoSize
+                } else {
+                    Search-SecurityEventLogs -Keyword $kw -Hours $hours | Format-Table -AutoSize
+                }
+            }
+            "13" {
+                $user = Read-Host "Username (SamAccountName) to investigate"
+                $h    = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                Get-UserActivityInvestigation -UserName $user -Hours $hours | Format-Table -AutoSize
+            }
+            "14" {
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                New-SecurityTimeline -Hours $hours | Format-Table -AutoSize
+            }
+            "0" { }
+            default { Write-Warning "Invalid option." }
+        }
+
+        if ($choice -ne "0") {
+            Write-Host "`nPress Enter to continue..." -ForegroundColor DarkGray
+            Read-Host | Out-Null
+        }
+    } while ($choice -ne "0")
+}
+
+# ============================================================
+#  MONITORING & REPORTING SUBMENU (v4.0)
+# ============================================================
+function Show-MonitoringMenu {
+    Clear-Host
+    Write-Host "---------------- MONITORING & REPORTING ----------------" -ForegroundColor Cyan
+    Write-Host " -- Health Monitoring --"
+    Write-Host " 1.  CPU Utilization"
+    Write-Host " 2.  Memory Usage"
+    Write-Host " 3.  Disk Usage (remote-capable)"
+    Write-Host " 4.  Uptime"
+    Write-Host " 5.  Service Health Check"
+    Write-Host " 6.  Network Connectivity Health"
+    Write-Host " -- Infrastructure Monitoring --"
+    Write-Host " 7.  Windows Server Monitoring (consolidated)"
+    Write-Host " 8.  Linux Server Monitoring (SSH)        [Posh-SSH]"
+    Write-Host " 9.  Process Monitoring"
+    Write-Host " 10. Critical Service Sweep"
+    Write-Host " -- Reporting --"
+    Write-Host " 11. Daily Health Report"
+    Write-Host " 12. Security Report"
+    Write-Host " 13. Server Audit Report"
+    Write-Host " 14. Generate HTML Dashboard"
+    Write-Host " 0.  Back to Main Menu"
+    Write-Host "----------------------------------------------------------" -ForegroundColor Cyan
+}
+
+function Start-MonitoringLoop {
+    do {
+        Show-MonitoringMenu
+        $choice = Read-Host "`nSelect an option"
+
+        switch ($choice) {
+            "1" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-CPUUtilization | Format-List } else { Get-CPUUtilization -ComputerName $cn | Format-List }
+            }
+            "2" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-MemoryUsage | Format-List } else { Get-MemoryUsage -ComputerName $cn | Format-List }
+            }
+            "3" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-RemoteDiskUsage | Format-Table -AutoSize } else { Get-RemoteDiskUsage -ComputerName $cn | Format-Table -AutoSize }
+            }
+            "4" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-UptimeStatus | Format-List } else { Get-UptimeStatus -ComputerName $cn | Format-List }
+            }
+            "5" {
+                $svc = Read-Host "Service name(s), comma-separated (e.g. Spooler,WinDefend)"
+                $cn  = Read-Host "Computer name (Enter for local machine)"
+                $names = $svc -split "," | ForEach-Object { $_.Trim() }
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-ServiceHealthCheck -ServiceName $names | Format-Table -AutoSize } else { Get-ServiceHealthCheck -ServiceName $names -ComputerName $cn | Format-Table -AutoSize }
+            }
+            "6" {
+                $cn = Read-Host "Computer name to check"
+                Test-NetworkConnectivityHealth -ComputerName $cn | Format-Table -AutoSize
+            }
+            "7" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-WindowsServerHealth | Format-List } else { Get-WindowsServerHealth -ComputerName $cn | Format-List }
+            }
+            "8" {
+                $hn   = Read-Host "Linux hostname/IP"
+                $cred = Get-Credential -Message "SSH credential for $hn"
+                Get-LinuxServerHealth -HostName $hn -Credential $cred | Format-List
+            }
+            "9" {
+                $sortOpt = Read-Host "Sort by CPU or Memory (default CPU, Enter to accept)"
+                $sort = if ([string]::IsNullOrWhiteSpace($sortOpt)) { "CPU" } else { $sortOpt }
+                Get-ProcessMonitor -SortBy $sort | Format-Table -AutoSize
+            }
+            "10" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { Get-CriticalServiceStatus | Format-Table -AutoSize } else { Get-CriticalServiceStatus -ComputerName $cn | Format-Table -AutoSize }
+            }
+            "11" {
+                $cn = Read-Host "Computer name (Enter for local machine)"
+                if ([string]::IsNullOrWhiteSpace($cn)) { New-DailyHealthReport | Format-List } else { New-DailyHealthReport -ComputerName $cn | Format-List }
+            }
+            "12" {
+                $h = Read-Host "Lookback window in hours (default 24, Enter to accept)"
+                $hours = if ([string]::IsNullOrWhiteSpace($h)) { 24 } else { [int]$h }
+                New-SecurityReportSummary -Hours $hours | Format-List
+            }
+            "13" { New-ServerAuditReport | Format-List }
+            "14" {
+                $path = Read-Host "Output path (Enter for default: Documentation\dashboard.html)"
+                if ([string]::IsNullOrWhiteSpace($path)) { New-HTMLDashboard | Format-List } else { New-HTMLDashboard -OutputPath $path | Format-List }
+            }
+            "0" { }
+            default { Write-Warning "Invalid option." }
+        }
+
+        if ($choice -ne "0") {
+            Write-Host "`nPress Enter to continue..." -ForegroundColor DarkGray
+            Read-Host | Out-Null
+        }
+    } while ($choice -ne "0")
+}
+
+# ============================================================
 #  MAIN LOOP
 # ============================================================
 function Start-ToolkitLoop {
@@ -273,6 +473,16 @@ function Start-ToolkitLoop {
                 }
             }
             "3" { Start-SystemLoop }
+            "4" {
+                if (Test-IsAdmin) {
+                    Start-SecurityLoop
+                } else {
+                    Write-Warning "Security log requires Administrator privileges. Relaunch PowerShell as Administrator."
+                    Write-Host "`nPress Enter to continue..." -ForegroundColor DarkGray
+                    Read-Host | Out-Null
+                }
+            }
+            "5" { Start-MonitoringLoop }
             "0" { Write-ToolkitLog -Message "Toolkit session ended by user" -Level INFO -Module Core }
             default { Write-Warning "Invalid option." }
         }
